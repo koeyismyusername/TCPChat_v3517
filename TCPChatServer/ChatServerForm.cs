@@ -3,6 +3,7 @@ using System.Windows.Forms;
 using System.Net.Sockets;
 using System.Net;
 using System.Threading;
+using System.Collections.Generic;
 
 namespace TCPChatServer
 {
@@ -10,6 +11,8 @@ namespace TCPChatServer
     {
         private TcpListener _listener;
         private bool _isRunning;
+
+        private Dictionary<long, List<TcpClient>> _clientsDict;
 
         public bool IsRunning
         {
@@ -52,7 +55,19 @@ namespace TCPChatServer
             if (!IsRunning) return;
 
             TcpClient client = _listener.EndAcceptTcpClient(ar);
-            client.GetStream();
+
+            new Thread(Listen).Start(client);
+            AcceptClient();
+        }
+
+        private void Listen(object clientObj)
+        {
+            TcpClient client = (TcpClient)clientObj;
+
+            if (client is null) return;
+
+            byte[] contentLengthBytes = new byte[4];
+            client.GetStream().BeginRead(contentLengthBytes, 0, contentLengthBytes.Length, OnContentLengthReadComplete, new ContentLengthReadState(client, contentLengthBytes));
         }
 
         private void btnExit_Click(object sender, EventArgs e)
