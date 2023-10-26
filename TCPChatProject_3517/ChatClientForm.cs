@@ -3,6 +3,7 @@ using System.Windows.Forms;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.IO;
 
 using Newtonsoft.Json;
 using TCPChatProject_3517.Models;
@@ -53,6 +54,7 @@ namespace TCPChatProject_3517
 
         private void btnExit_Click(object sender, EventArgs e)
         {
+            SendChat(new Chat(RoomId, Username, Message, ChatState.Disconnect));
             CloseClient();
         }
 
@@ -62,11 +64,12 @@ namespace TCPChatProject_3517
             _client = null;
             IsRunning = false;
 
-            // TODO: 연결 종료 메세지 보내기
+            SendChat(new Chat(RoomId, Username, Message, ChatState.Disconnect));
         }
 
         private void btnConnect_Click(object sender, EventArgs e)
         {
+            lBoxMessages.Items.Clear();
             _client = new TcpClient();
             _client.BeginConnect("127.0.0.1", 8080, OnConnectComplete, null);
         }
@@ -76,8 +79,8 @@ namespace TCPChatProject_3517
             try
             {
                 _client.EndConnect(ar);
-                AddToLBoxMessages("서버에 연결되었습니다.");    // 나중에 지울 코드
                 IsRunning = true;
+                SendChat(new Chat(RoomId, Username, Message, ChatState.Connect));
 
                 new Thread(Listen).Start();
                 return;
@@ -88,6 +91,25 @@ namespace TCPChatProject_3517
             }
 
             CloseClient();
+        }
+
+        private void SendChat(Chat chat)
+        {
+            if (!IsRunning) return;
+
+            string json = JsonConvert.SerializeObject(chat);
+            byte[] contentBytes = Encoding.UTF8.GetBytes(json);
+            byte[] contentLengthBytes = BitConverter.GetBytes(contentBytes.Length);
+            byte[] combinedBytes = new byte[contentLengthBytes.Length + contentBytes.Length];
+
+            int startIndex = 0;
+            Array.Copy(contentLengthBytes, 0, combinedBytes, startIndex, contentLengthBytes.Length);
+
+            startIndex += contentLengthBytes.Length;
+            Array.Copy(contentBytes, 0, combinedBytes, startIndex, contentBytes.Length);
+
+            _client.GetStream().BeginWrite(combinedBytes, 0, combinedBytes.Length, OnChatWriteComplete, null);
+            //AddToLBoxMessages("메세지 전송");
         }
 
         private void Listen()
@@ -102,12 +124,26 @@ namespace TCPChatProject_3517
         {
             if (!IsRunning) return;
 
-            int read = _client.GetStream().EndRead(ar);
-            if (read is 0)
+            try
+            {
+                int read = _client.GetStream().EndRead(ar);
+                if (read is 0)
+                {
+                    CloseClient();
+                    return;
+                }
+            }
+            catch (IOException e)
             {
                 CloseClient();
                 return;
             }
+            catch (InvalidOperationException)
+            {
+                CloseClient();
+                return;
+            }
+            
 
             byte[] contentLengthBytes = (byte[])ar.AsyncState;
             int contentLength = BitConverter.ToInt32(contentLengthBytes, 0);
@@ -142,7 +178,7 @@ namespace TCPChatProject_3517
                 case ChatState.Message:
                     AddToLBoxMessages($"{chat.Username}: {chat.Message}");
                     break;
-                case ChatState.DisConnect:
+                case ChatState.Disconnect:
                     AddToLBoxMessages($"{chat.Username}님이 나갔습니다.");
                     break;
                 default:

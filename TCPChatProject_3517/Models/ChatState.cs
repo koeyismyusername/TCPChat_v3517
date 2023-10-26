@@ -7,6 +7,6 @@ namespace TCPChatProject_3517.Models
 {
     public enum ChatState
     {
-        None, Connect, Message, DisConnect
+        None, Connect, Message, Disconnect
     }
 }
